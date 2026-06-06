@@ -14,7 +14,9 @@ RUN git clone --depth=1 --branch=${NATS_VERSION} https://github.com/nats-io/nats
 ENV CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH}
 RUN go build -trimpath -ldflags="-s -w" -o /out/nats-server .
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM scratch
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /out/nats-server /usr/local/bin/nats-server
 EXPOSE 4222 6222 8222
 ENTRYPOINT ["/usr/local/bin/nats-server"]
