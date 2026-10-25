@@ -3,8 +3,8 @@
 # via the NATS_VERSION build-arg ; bump = one ARG change + a `vX.Y.Z`
 # git tag here.
 
-ARG NATS_VERSION=v2.11.0
-ARG GO_VERSION=1.23
+ARG NATS_VERSION=v2.11.17
+ARG GO_VERSION=1.27.2
 
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm AS builder
 ARG NATS_VERSION TARGETOS TARGETARCH
