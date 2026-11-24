@@ -3,7 +3,7 @@
 # via the NATS_VERSION build-arg ; bump = one ARG change + a `vX.Y.Z`
 # git tag here.
 
-ARG NATS_VERSION=v2.11.17
+ARG NATS_VERSION=v2.12.15
 ARG GO_VERSION=1.27.2
 
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm AS builder
@@ -12,7 +12,7 @@ WORKDIR /src
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN git clone --depth=1 --branch=${NATS_VERSION} https://github.com/nats-io/nats-server.git .
 ENV CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH}
-RUN go build -trimpath -ldflags="-s -w" -o /out/nats-server .
+RUN go build -trimpath -ldflags="-s -w" -o /out/nats-server . && mkdir -p /out/data
 
 FROM scratch
 ARG NATS_VERSION
@@ -25,5 +25,10 @@ LABEL org.opencontainers.image.title="weft-nats" \
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /out/nats-server /usr/local/bin/nats-server
-EXPOSE 4222 6222 8222
-ENTRYPOINT ["/usr/local/bin/nats-server"]
+COPY nats-server.conf /etc/weft-nats/nats-server.conf
+# JetStream store: owned by the runtime user, 0700 (a named volume mounted
+# here inherits both on first use).
+COPY --from=builder --chown=65532:65532 --chmod=0700 /out/data /data
+USER 65532:65532
+EXPOSE 4222
+ENTRYPOINT ["/usr/local/bin/nats-server", "-c", "/etc/weft-nats/nats-server.conf"]
