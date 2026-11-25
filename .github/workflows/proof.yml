@@ -1,0 +1,66 @@
+name: Proof
+
+# Builds the image, starts it with throwaway keys and runs weft-loom-server's
+# live callout test against it: anonymous client refused, a VM credential
+# cannot read another VM's subject, loom-server can publish. Runs on push to
+# main so a tag is cut from a commit that has been proven.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  LOOM_SERVER_REF: v0.6.1
+  NK_VERSION: v0.4.16
+
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: openweft/weft-loom-server
+          ref: ${{ env.LOOM_SERVER_REF }}
+          path: loom-server
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: loom-server/go.mod
+          cache: false
+      - name: Throwaway keys
+        run: |
+          set -eu
+          go install github.com/nats-io/nkeys/nk@${NK_VERSION}
+          keys="$RUNNER_TEMP/keys"
+          mkdir -m 0700 "$keys"
+          umask 077
+          "$(go env GOPATH)/bin/nk" -gen user    > "$keys/loom.seed"
+          "$(go env GOPATH)/bin/nk" -gen account > "$keys/callout.seed"
+          {
+            echo "LOOM_USER_KEY = \"$("$(go env GOPATH)/bin/nk" -inkey "$keys/loom.seed" -pubout)\""
+            echo "CALLOUT_ISSUER_KEY = \"$("$(go env GOPATH)/bin/nk" -inkey "$keys/callout.seed" -pubout)\""
+          } > "$keys/keys.conf"
+          chmod 0644 "$keys/keys.conf"   # public keys only; the container runs as uid 65532
+      - name: Build and start the broker
+        run: |
+          set -eu
+          docker build -t weft-nats:proof .
+          docker run -d --name weft-nats -p 4222:4222 \
+            -v "$RUNNER_TEMP/keys/keys.conf:/etc/weft-nats/keys.conf:ro" \
+            weft-nats:proof
+          timeout 30 sh -c 'until nc -z 127.0.0.1 4222; do sleep 1; done'
+      - name: Live callout proof
+        working-directory: loom-server
+        env:
+          WEFT_NATS_E2E_URL: nats://127.0.0.1:4222
+        run: |
+          WEFT_NATS_E2E_LOOM_SEED_FILE="$RUNNER_TEMP/keys/loom.seed" \
+          WEFT_NATS_E2E_CALLOUT_SEED_FILE="$RUNNER_TEMP/keys/callout.seed" \
+          go test -count=1 -v -run 'TestCalloutLiveBroker' ./internal/natsbroker/
+      - name: Broker log
+        if: failure()
+        run: docker logs weft-nats
