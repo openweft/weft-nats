@@ -27,6 +27,11 @@ jobs:
           repository: openweft/weft-loom-server
           ref: ${{ env.LOOM_SERVER_REF }}
           path: loom-server
+      # loom-server's go.mod replaces these two modules with sibling dirs.
+      - name: Fetch loom-server's sibling modules
+        run: |
+          git clone --depth=1 --branch v0.4.3 https://github.com/openweft/weft-microvm-agent.git "$GITHUB_WORKSPACE/weft-microvm-agent"
+          git clone --depth=1 https://github.com/openweft/weft-microvm-init.git "$GITHUB_WORKSPACE/weft-microvm-init"
       - uses: actions/setup-go@v6
         with:
           go-version-file: loom-server/go.mod
